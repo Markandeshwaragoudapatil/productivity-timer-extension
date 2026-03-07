@@ -178,13 +178,14 @@ function queryEndTime() {
                 return;
             }
 
-            if (response && response.endTime) {
+            if (response && response.status === "running" && response.endTime) {
                 startCountdown(response.endTime);
                 setStatus(`Timer running (${key})`);
-            } else {
-                timerEl.textContent = "Stopped";
-                setStatus("");
+                return;
             }
+
+            timerEl.textContent = "Stopped";
+            setStatus("");
         });
     });
 }

@@ -139,7 +139,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return;
             }
 
-            // Start a new timer (always reset any existing state)
+            // If another tab has already paused the timer, keep it paused.
+        getTimerState(key, (existingState) => {
+            if (existingState && existingState.status === "paused") {
+                sendResponse({ status: "paused", remaining: existingState.remaining, key });
+                return;
+            }
+
+            // If it's already running, just return the current end time so new tabs stay in sync.
+            if (existingState && existingState.status === "running") {
+                sendResponse({ status: "running", endTime: existingState.endTime, key });
+                return;
+            }
+
+            // Start a new timer (reset any existing state)
             const endTime = Date.now() + TIMER_DURATION_MS;
             setTimerState(key, { status: "running", endTime });
 
@@ -147,6 +160,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             chrome.alarms.create(alarmName, { delayInMinutes: TIMER_DURATION_MS / 60000 });
 
             sendResponse({ status: "started", endTime, key });
+        });
+
         });
 
         return true; // keep service worker alive for sendResponse
@@ -253,7 +268,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         getTimerState(key, (state) => {
-            sendResponse(state ? { endTime: state.endTime, key } : {});
+            // Return the full timer state so popups on other tabs know whether the timer is paused or running.
+            if (!state) {
+                sendResponse({});
+                return;
+            }
+
+            const response = { key, status: state.status };
+            if (state.status === "running") {
+                response.endTime = state.endTime;
+            } else if (state.status === "paused") {
+                response.remaining = state.remaining;
+            }
+
+            sendResponse(response);
         });
         return true;
     }
