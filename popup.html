@@ -9,12 +9,26 @@
 
     <body>
 
-        <h2>Productivity Timer</h2>
+        <div class="container">
+            <header>
+                <h2>Productivity Timer</h2>
+                <div id="site" class="site">—</div>
+            </header>
 
-        <div id="timer" style="font-size: 1.2em; margin: 10px 0;">Stopped</div>
+            <div class="status">
+                <div id="timer" class="timer">Stopped</div>
+                <div id="status" class="statusText"></div>
+            </div>
 
-        <button id="start">Start Timer</button>
-        <button id="reset">Reset</button>
+            <div class="controls">
+                <button id="start" class="primary">Start</button>
+                <button id="reset">Reset</button>
+            </div>
+
+            <div class="progress">
+                <div id="progressBar" class="progressBar"></div>
+            </div>
+        </div>
 
         <script src="popup.js"></script>
 
