@@ -139,13 +139,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return;
             }
 
-            const endTime = Date.now() + TIMER_DURATION_MS;
-            setTimerState(key, endTime);
+            // If a timer is already running for this site, don’t restart it; just return the existing end time.
+            getTimerState(key, (state) => {
+                const now = Date.now();
+                if (state && state.endTime && state.endTime > now) {
+                    sendResponse({ status: "running", endTime: state.endTime, key });
+                    return;
+                }
 
-            const alarmName = `${ALARM_NAME_BASE}_${key}`;
-            chrome.alarms.create(alarmName, { delayInMinutes: TIMER_DURATION_MS / 60000 });
+                const endTime = now + TIMER_DURATION_MS;
+                setTimerState(key, endTime);
 
-            sendResponse({ status: "started", endTime, key });
+                const alarmName = `${ALARM_NAME_BASE}_${key}`;
+                chrome.alarms.create(alarmName, { delayInMinutes: TIMER_DURATION_MS / 60000 });
+
+                sendResponse({ status: "started", endTime, key });
+            });
         });
 
         return true; // keep service worker alive for sendResponse
