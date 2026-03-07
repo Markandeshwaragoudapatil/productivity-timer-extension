@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Productivity Timer",
+  "version": "1.0",
+  "description": "Starts a 5 minute timer on distracting websites.",
+  
+  "permissions": ["tabs", "storage", "notifications", "alarms", "tts"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icon.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*",
+        "*://*.instagram.com/*",
+        "*://*.facebook.com/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
