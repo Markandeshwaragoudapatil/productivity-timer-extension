@@ -1,12 +1,29 @@
 const timerEl = document.getElementById("timer");
-const statusEl = document.createElement("div");
-statusEl.id = "status";
-document.body.appendChild(statusEl);
+const statusEl = document.getElementById("status");
+const siteEl = document.getElementById("site");
+const progressBar = document.getElementById("progressBar");
+const startBtn = document.getElementById("start");
 
 let countdownInterval = null;
+let timerRunning = false;
 
 function setStatus(text) {
     statusEl.textContent = text;
+}
+
+function setSite(text) {
+    siteEl.textContent = text;
+}
+
+function setProgress(percent) {
+    progressBar.style.width = `${percent}%`;
+}
+
+function setStartButton(isRunning) {
+    timerRunning = Boolean(isRunning);
+    startBtn.textContent = isRunning ? "Stop" : "Start";
+    startBtn.classList.toggle("primary", !isRunning);
+    startBtn.classList.toggle("danger", isRunning);
 }
 
 function formatTime(ms) {
@@ -45,12 +62,16 @@ function playBeep() {
 function updateTimerDisplay(endTime) {
     if (!endTime) {
         timerEl.textContent = "Stopped";
+        setProgress(0);
+        setStartButton(false);
         return;
     }
 
     const remaining = endTime - Date.now();
     if (remaining <= 0) {
         timerEl.textContent = "Time's up!";
+        setProgress(100);
+        setStartButton(false);
         if (!hasPlayedSound) {
             playBeep();
             hasPlayedSound = true;
@@ -58,7 +79,12 @@ function updateTimerDisplay(endTime) {
         return;
     }
 
+    const total = 15_000; // match timer duration in background
+    const percent = Math.min(100, Math.max(0, (1 - remaining / total) * 100));
+    setProgress(percent);
+
     timerEl.textContent = `Running: ${formatTime(remaining)}`;
+    setStartButton(true);
 }
 
 function startCountdown(endTime) {
@@ -71,6 +97,7 @@ function startCountdown(endTime) {
         if (remaining <= 0) {
             clearInterval(countdownInterval);
             timerEl.textContent = "Time's up!";
+            setStartButton(false);
             return;
         }
         updateTimerDisplay(endTime);
@@ -100,9 +127,12 @@ function withActiveTab(callback) {
 
 function queryEndTime() {
     withActiveTab((key, url) => {
+        setSite(key || "—");
+
         if (!key) {
             timerEl.textContent = "Stopped";
             setStatus("No known site");
+            setProgress(0);
             return;
         }
 
@@ -136,8 +166,11 @@ function sendMessage(action) {
     withActiveTab((key, url) => {
         if (!key) {
             setStatus("No known site");
+            setSite("—");
             return;
         }
+
+        setSite(key);
 
         chrome.runtime.sendMessage({ action, siteKey: key }, (response) => {
             if (chrome.runtime.lastError) {
@@ -157,7 +190,12 @@ function sendMessage(action) {
     });
 }
 
-document.getElementById("start").addEventListener("click", () => {
+startBtn.addEventListener("click", () => {
+    if (timerRunning) {
+        // Stop / cancel the timer (same as reset)
+        document.getElementById("reset").click();
+        return;
+    }
     sendMessage("startTimer");
 });
 
@@ -171,6 +209,7 @@ document.getElementById("reset").addEventListener("click", () => {
         sendMessage("resetTimer");
         clearInterval(countdownInterval);
         timerEl.textContent = "Stopped";
+        setStartButton(false);
         localStorage.removeItem(`productivityTimerEnd_${key}`);
     });
 });
