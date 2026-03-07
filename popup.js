@@ -3,9 +3,10 @@ const statusEl = document.getElementById("status");
 const siteEl = document.getElementById("site");
 const progressBar = document.getElementById("progressBar");
 const startBtn = document.getElementById("start");
+const resetBtn = document.getElementById("reset");
 
 let countdownInterval = null;
-let timerRunning = false;
+let currentMode = "reset"; // reset | running | paused
 
 function setStatus(text) {
     statusEl.textContent = text;
@@ -19,11 +20,26 @@ function setProgress(percent) {
     progressBar.style.width = `${percent}%`;
 }
 
-function setStartButton(isRunning) {
-    timerRunning = Boolean(isRunning);
-    startBtn.textContent = isRunning ? "Stop" : "Start";
-    startBtn.classList.toggle("primary", !isRunning);
-    startBtn.classList.toggle("danger", isRunning);
+function setMode(mode) {
+    currentMode = mode;
+
+    if (mode === "running") {
+        startBtn.textContent = "Stop";
+        startBtn.classList.add("danger");
+        startBtn.classList.remove("primary");
+        resetBtn.style.display = "inline-flex";
+    } else if (mode === "paused") {
+        startBtn.textContent = "Resume";
+        startBtn.classList.add("primary");
+        startBtn.classList.remove("danger");
+        resetBtn.style.display = "inline-flex";
+    } else {
+        // reset
+        startBtn.textContent = "Start";
+        startBtn.classList.add("primary");
+        startBtn.classList.remove("danger");
+        resetBtn.style.display = "none";
+    }
 }
 
 function formatTime(ms) {
@@ -63,7 +79,7 @@ function updateTimerDisplay(endTime) {
     if (!endTime) {
         timerEl.textContent = "Stopped";
         setProgress(0);
-        setStartButton(false);
+        setMode("reset");
         return;
     }
 
@@ -71,7 +87,7 @@ function updateTimerDisplay(endTime) {
     if (remaining <= 0) {
         timerEl.textContent = "Time's up!";
         setProgress(100);
-        setStartButton(false);
+        setMode("reset");
         if (!hasPlayedSound) {
             playBeep();
             hasPlayedSound = true;
@@ -84,7 +100,7 @@ function updateTimerDisplay(endTime) {
     setProgress(percent);
 
     timerEl.textContent = `Running: ${formatTime(remaining)}`;
-    setStartButton(true);
+    setMode("running");
 }
 
 function startCountdown(endTime) {
@@ -97,7 +113,7 @@ function startCountdown(endTime) {
         if (remaining <= 0) {
             clearInterval(countdownInterval);
             timerEl.textContent = "Time's up!";
-            setStartButton(false);
+            setMode("reset");
             return;
         }
         updateTimerDisplay(endTime);
@@ -151,6 +167,17 @@ function queryEndTime() {
                 return;
             }
 
+            if (response && response.status === "paused") {
+                clearInterval(countdownInterval);
+                setMode("paused");
+                const remaining = response.remaining || 0;
+                timerEl.textContent = `Paused: ${formatTime(remaining)}`;
+                setProgress((1 - remaining / 15000) * 100);
+                localStorage.removeItem(`productivityTimerEnd_${key}`);
+                setStatus(`Timer paused (${key})`);
+                return;
+            }
+
             if (response && response.endTime) {
                 startCountdown(response.endTime);
                 setStatus(`Timer running (${key})`);
@@ -182,24 +209,42 @@ function sendMessage(action) {
                 setStatus("Timer: " + response.status);
             }
 
+            if (response && response.status === "paused") {
+                clearInterval(countdownInterval);
+                setMode("paused");
+                const remaining = response.remaining || 0;
+                timerEl.textContent = `Paused: ${formatTime(remaining)}`;
+                setProgress((1 - remaining / 15000) * 100);
+                localStorage.removeItem(`productivityTimerEnd_${key}`);
+                return;
+            }
+
             if (response && response.endTime) {
-                startCountdown(response.endTime);
-                localStorage.setItem(`productivityTimerEnd_${key}`, response.endTime);
+                if (action === "resumeTimer" || action === "startTimer") {
+                    startCountdown(response.endTime);
+                    localStorage.setItem(`productivityTimerEnd_${key}`, response.endTime);
+                }
             }
         });
     });
 }
 
 startBtn.addEventListener("click", () => {
-    if (timerRunning) {
-        // Stop / cancel the timer (same as reset)
-        document.getElementById("reset").click();
+    if (currentMode === "running") {
+        sendMessage("pauseTimer");
         return;
     }
+
+    if (currentMode === "paused") {
+        sendMessage("resumeTimer");
+        return;
+    }
+
+    // reset state
     sendMessage("startTimer");
 });
 
-document.getElementById("reset").addEventListener("click", () => {
+resetBtn.addEventListener("click", () => {
     withActiveTab((key) => {
         if (!key) {
             setStatus("No known site");
@@ -209,7 +254,7 @@ document.getElementById("reset").addEventListener("click", () => {
         sendMessage("resetTimer");
         clearInterval(countdownInterval);
         timerEl.textContent = "Stopped";
-        setStartButton(false);
+        setMode("reset");
         localStorage.removeItem(`productivityTimerEnd_${key}`);
     });
 });

@@ -20,8 +20,8 @@ function cooldownKey(key) {
     return `productivityTimerCooldown_${key}`;
 }
 
-function setTimerState(key, endTime) {
-    chrome.storage.local.set({ [stateKey(key)]: { endTime } });
+function setTimerState(key, data) {
+    chrome.storage.local.set({ [stateKey(key)]: data });
 }
 
 function clearTimerState(key) {
@@ -127,7 +127,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
         }
 
-        // If the site is still on cooldown, don’t restart the timer and close the tab immediately.
+        // If the site is still on cooldown, don’t start and close the tab immediately.
         getCooldown(key, (cooldownUntil) => {
             if (Date.now() < cooldownUntil) {
                 if (sender.tab && typeof sender.tab.id === "number") {
@@ -139,25 +139,93 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return;
             }
 
-            // If a timer is already running for this site, don’t restart it; just return the existing end time.
-            getTimerState(key, (state) => {
-                const now = Date.now();
-                if (state && state.endTime && state.endTime > now) {
-                    sendResponse({ status: "running", endTime: state.endTime, key });
-                    return;
-                }
+            // Start a new timer (always reset any existing state)
+            const endTime = Date.now() + TIMER_DURATION_MS;
+            setTimerState(key, { status: "running", endTime });
 
-                const endTime = now + TIMER_DURATION_MS;
-                setTimerState(key, endTime);
+            const alarmName = `${ALARM_NAME_BASE}_${key}`;
+            chrome.alarms.create(alarmName, { delayInMinutes: TIMER_DURATION_MS / 60000 });
 
-                const alarmName = `${ALARM_NAME_BASE}_${key}`;
-                chrome.alarms.create(alarmName, { delayInMinutes: TIMER_DURATION_MS / 60000 });
-
-                sendResponse({ status: "started", endTime, key });
-            });
+            sendResponse({ status: "started", endTime, key });
         });
 
         return true; // keep service worker alive for sendResponse
+    }
+
+    if (message.action === "pauseTimer") {
+        const key = message.siteKey || getSiteKey(sender.tab && sender.tab.url);
+        if (!key) {
+            sendResponse({ status: "no_site" });
+            return true;
+        }
+
+        getTimerState(key, (state) => {
+            if (!state || state.status !== "running") {
+                sendResponse({ status: "not_running", key });
+                return;
+            }
+
+            const remaining = Math.max(0, state.endTime - Date.now());
+            const alarmName = `${ALARM_NAME_BASE}_${key}`;
+            chrome.alarms.clear(alarmName);
+            setTimerState(key, { status: "paused", remaining });
+            sendResponse({ status: "paused", remaining, key });
+        });
+
+        return true;
+    }
+
+    if (message.action === "resumeTimer") {
+        const key = message.siteKey || getSiteKey(sender.tab && sender.tab.url);
+        if (!key) {
+            sendResponse({ status: "no_site" });
+            return true;
+        }
+
+        getTimerState(key, (state) => {
+            if (!state || state.status !== "paused") {
+                sendResponse({ status: "not_paused", key });
+                return;
+            }
+
+            const endTime = Date.now() + (state.remaining || 0);
+            setTimerState(key, { status: "running", endTime });
+            const alarmName = `${ALARM_NAME_BASE}_${key}`;
+            chrome.alarms.create(alarmName, { delayInMinutes: (state.remaining || 0) / 60000 });
+            sendResponse({ status: "resumed", endTime, key });
+        });
+
+        return true;
+    }
+
+    if (message.action === "resetTimer") {
+        const key = message.siteKey || getSiteKey(sender.tab && sender.tab.url);
+        if (!key) {
+            sendResponse({ status: "no_site" });
+            return true;
+        }
+
+        const alarmName = `${ALARM_NAME_BASE}_${key}`;
+        chrome.alarms.clear(alarmName, (wasCleared) => {
+            if (wasCleared) {
+                clearTimerState(key);
+            }
+            sendResponse({ status: wasCleared ? "reset" : "none", key });
+        });
+        return true;
+    }
+
+    if (message.action === "getEndTime") {
+        const key = message.siteKey || getSiteKey(sender.tab && sender.tab.url);
+        if (!key) {
+            sendResponse({});
+            return true;
+        }
+
+        getTimerState(key, (state) => {
+            sendResponse(state ? { ...state, key } : {});
+        });
+        return true;
     }
 
     if (message.action === "resetTimer") {
