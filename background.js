@@ -12,7 +12,25 @@ const DEFAULT_SITES = [
 let blockedSites = [...DEFAULT_SITES];
 
 function normalizeDomain(domain) {
-    return (domain || "").trim().toLowerCase().replace(/^\*\.?/, "");
+    if (!domain) return "";
+    const trimmed = domain.trim().toLowerCase();
+
+    // If user entered a URL, extract the hostname.
+    let host = trimmed;
+    try {
+        const url = trimmed.includes("://") ? new URL(trimmed) : new URL(`https://${trimmed}`);
+        host = url.hostname.toLowerCase();
+    } catch {
+        host = trimmed;
+    }
+
+    // Normalize common prefixes (www) and wildcard patterns.
+    host = host.replace(/^\*\.?/, "");
+    if (host.startsWith("www.")) {
+        host = host.substring(4);
+    }
+
+    return host;
 }
 
 function updateBlockedSitesFromStorage(callback) {
