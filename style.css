@@ -111,3 +111,59 @@ button:not(.primary):hover {
     background: linear-gradient(90deg, #2c7be5, #5597ff);
     transition: width 0.2s ease;
 }
+
+.site-config {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(34, 34, 34, 0.1);
+}
+
+.site-config h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #333;
+}
+
+.site-config__add {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.site-config__add input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid rgba(34, 34, 34, 0.2);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.blockedSitesList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.blockedSitesList li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(44, 123, 229, 0.08);
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.blockedSitesList li button {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 6px;
+    background: rgba(255, 76, 76, 0.9);
+}
+
+.blockedSitesList li button:hover {
+    background: rgba(255, 76, 76, 1);
+}

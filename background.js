@@ -3,12 +3,57 @@ const ALARM_NAME_BASE = "productivityTimer";
 
 const TIMER_DURATION_MS = 15_000; // 15 seconds for testing
 
+const DEFAULT_SITES = [
+    "youtube.com",
+    "instagram.com",
+    "facebook.com"
+];
+
+let blockedSites = [...DEFAULT_SITES];
+
+function normalizeDomain(domain) {
+    return (domain || "").trim().toLowerCase().replace(/^\*\.?/, "");
+}
+
+function updateBlockedSitesFromStorage() {
+    chrome.storage.local.get({ blockedSites: DEFAULT_SITES }, (result) => {
+        if (Array.isArray(result.blockedSites) && result.blockedSites.length) {
+            blockedSites = result.blockedSites.map(normalizeDomain).filter(Boolean);
+        } else {
+            blockedSites = [...DEFAULT_SITES];
+        }
+    });
+}
+
+// Keep the in-memory list in sync with storage
+updateBlockedSitesFromStorage();
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.blockedSites) {
+        const oldSites = Array.isArray(changes.blockedSites.oldValue) ? changes.blockedSites.oldValue.map(normalizeDomain) : [];
+        const newSites = Array.isArray(changes.blockedSites.newValue) ? changes.blockedSites.newValue.map(normalizeDomain) : [];
+
+        // Clear any timers/alarms for sites that were removed from the block list.
+        oldSites.forEach((site) => {
+            if (!newSites.includes(site)) {
+                const alarmName = `${ALARM_NAME_BASE}_${site}`;
+                chrome.alarms.clear(alarmName);
+                clearTimerState(site);
+            }
+        });
+
+        updateBlockedSitesFromStorage();
+    }
+});
+
 function getSiteKey(url) {
     if (!url) return null;
     const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith("youtube.com")) return "youtube";
-    if (host.endsWith("instagram.com")) return "instagram";
-    if (host.endsWith("facebook.com")) return "facebook";
+    for (const domain of blockedSites) {
+        if (!domain) continue;
+        if (host === domain || host.endsWith(`.${domain}`)) {
+            return domain;
+        }
+    }
     return null;
 }
 
@@ -83,22 +128,12 @@ function getCooldown(key, callback) {
 
 function isDistractingUrl(url, key) {
     if (!url || !key) return false;
-    const patterns = {
-        youtube: /https?:\/\/(?:www\.)?youtube\.com\//i,
-        instagram: /https?:\/\/(?:www\.)?instagram\.com\//i,
-        facebook: /https?:\/\/(?:www\.)?facebook\.com\//i,
-    };
-    return patterns[key] ? patterns[key].test(url) : false;
+    return getSiteKey(url) === key;
 }
 
 function closeTabsForSite(key) {
-    const patterns = {
-        youtube: ["*://*.youtube.com/*"],
-        instagram: ["*://*.instagram.com/*"],
-        facebook: ["*://*.facebook.com/*"]
-    };
-
-    const urls = patterns[key] || [];
+    if (!key) return;
+    const urls = [`*://${key}/*`, `*://*.${key}/*`];
     if (!urls.length) return;
 
     console.log(`Closing tabs for site key=${key}`, urls);
@@ -294,25 +329,34 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm && alarm.name.startsWith(ALARM_NAME_BASE)) {
         const key = alarm.name.substring(ALARM_NAME_BASE.length + 1);
 
-        chrome.notifications.create({
-            type: "basic",
-            iconUrl: chrome.runtime.getURL("icon.png"),
-            title: "Time's Up!",
-            message: `Your ${key} timer is over.`,
-            buttons: [
-                { title: "Restart Timer" },
-                { title: "Dismiss" }
-            ]
+        // If the user has already closed all tabs for this site, don’t alert or close anything.
+        const urls = [`*://${key}/*`, `*://*.${key}/*`];
+        chrome.tabs.query({ url: urls }, (tabs) => {
+            if (!tabs.length) {
+                clearTimerState(key);
+                return;
+            }
+
+            chrome.notifications.create({
+                type: "basic",
+                iconUrl: chrome.runtime.getURL("icon.png"),
+                title: "Time's Up!",
+                message: `Your ${key} timer is over.`,
+                buttons: [
+                    { title: "Restart Timer" },
+                    { title: "Dismiss" }
+                ]
+            });
+
+            // Play a sound via TTS so user hears it even if the popup is closed.
+            if (chrome.tts) {
+                chrome.tts.speak("Time is up", { rate: 1.0 });
+            }
+
+            // Close all tabs for this site and start cooldown for this site
+            closeTabsForSite(key);
+            clearTimerState(key);
         });
-
-        // Play a sound via TTS so user hears it even if the popup is closed.
-        if (chrome.tts) {
-            chrome.tts.speak("Time is up", { rate: 1.0 });
-        }
-
-        // Close all tabs for this site and start cooldown for this site
-        closeTabsForSite(key);
-        clearTimerState(key);
     }
 });
 
@@ -373,13 +417,9 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
             if (!key) return;
 
             // If no remaining tabs for this site exist, cancel the timer/alarm.
-            const patterns = {
-                youtube: ["*://*.youtube.com/*"],
-                instagram: ["*://*.instagram.com/*"],
-                facebook: ["*://*.facebook.com/*"]
-            };
+            const urls = [`*://${key}/*`, `*://*.${key}/*`];
 
-            chrome.tabs.query({ url: patterns[key] || [] }, (tabs) => {
+            chrome.tabs.query({ url: urls }, (tabs) => {
                 if (!tabs.length) {
                     const alarmName = `${ALARM_NAME_BASE}_${key}`;
                     chrome.alarms.clear(alarmName);

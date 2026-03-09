@@ -4,9 +4,77 @@ const siteEl = document.getElementById("site");
 const progressBar = document.getElementById("progressBar");
 const startBtn = document.getElementById("start");
 const resetBtn = document.getElementById("reset");
+const blockedSiteInput = document.getElementById("blockedSiteInput");
+const addBlockedSiteBtn = document.getElementById("addBlockedSite");
+const blockedSitesList = document.getElementById("blockedSitesList");
 
 let countdownInterval = null;
 let currentMode = "reset"; // reset | running | paused
+
+const DEFAULT_SITES = ["youtube.com", "instagram.com", "facebook.com"];
+let blockedSites = [...DEFAULT_SITES];
+
+function normalizeDomain(domain) {
+    return (domain || "").trim().toLowerCase().replace(/^\*\.?/, "");
+}
+
+function renderBlockedSites() {
+    blockedSitesList.innerHTML = "";
+    blockedSites.forEach((domain) => {
+        const li = document.createElement("li");
+        li.textContent = domain;
+
+        const removeButton = document.createElement("button");
+        removeButton.textContent = "Remove";
+        removeButton.addEventListener("click", () => {
+            removeBlockedSite(domain);
+        });
+
+        li.appendChild(removeButton);
+        blockedSitesList.appendChild(li);
+    });
+}
+
+function saveBlockedSites(sites) {
+    blockedSites = sites.map(normalizeDomain).filter(Boolean);
+    chrome.storage.local.set({ blockedSites }, () => {
+        renderBlockedSites();
+    });
+}
+
+function addBlockedSite(domain) {
+    const normalized = normalizeDomain(domain);
+    if (!normalized) return;
+    if (blockedSites.includes(normalized)) return;
+
+    saveBlockedSites([...blockedSites, normalized]);
+}
+
+function removeBlockedSite(domain) {
+    saveBlockedSites(blockedSites.filter((d) => d !== domain));
+}
+
+function loadBlockedSites(callback) {
+    chrome.storage.local.get({ blockedSites: DEFAULT_SITES }, (result) => {
+        blockedSites = Array.isArray(result.blockedSites) && result.blockedSites.length
+            ? result.blockedSites.map(normalizeDomain).filter(Boolean)
+            : [...DEFAULT_SITES];
+        renderBlockedSites();
+        if (typeof callback === "function") callback();
+    });
+}
+
+function getSiteKeyFromUrl(url) {
+    if (!url) return null;
+    const host = new URL(url).hostname.toLowerCase();
+    for (const domain of blockedSites) {
+        if (!domain) continue;
+        if (host === domain || host.endsWith(`.${domain}`)) {
+            return domain;
+        }
+    }
+    return null;
+}
 
 function setStatus(text) {
     statusEl.textContent = text;
@@ -118,15 +186,6 @@ function startCountdown(endTime) {
         }
         updateTimerDisplay(endTime);
     }, 250);
-}
-
-function getSiteKeyFromUrl(url) {
-    if (!url) return null;
-    const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith("youtube.com")) return "youtube";
-    if (host.endsWith("instagram.com")) return "instagram";
-    if (host.endsWith("facebook.com")) return "facebook";
-    return null;
 }
 
 function withActiveTab(callback) {
@@ -260,4 +319,18 @@ resetBtn.addEventListener("click", () => {
     });
 });
 
-queryEndTime();
+addBlockedSiteBtn.addEventListener("click", () => {
+    const value = blockedSiteInput.value.trim();
+    if (!value) return;
+    addBlockedSite(value);
+    blockedSiteInput.value = "";
+});
+
+blockedSiteInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        addBlockedSiteBtn.click();
+    }
+});
+
+loadBlockedSites(queryEndTime);
