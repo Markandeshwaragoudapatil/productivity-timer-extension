@@ -36,3 +36,9 @@ function maybeStartTimer() {
 }
 
 maybeStartTimer();
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message && message.action === "refreshBlockedSites") {
+        maybeStartTimer();
+    }
+});

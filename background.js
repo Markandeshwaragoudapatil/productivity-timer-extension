@@ -15,14 +15,35 @@ function normalizeDomain(domain) {
     return (domain || "").trim().toLowerCase().replace(/^\*\.?/, "");
 }
 
-function updateBlockedSitesFromStorage() {
+function updateBlockedSitesFromStorage(callback) {
     chrome.storage.local.get({ blockedSites: DEFAULT_SITES }, (result) => {
         if (Array.isArray(result.blockedSites) && result.blockedSites.length) {
             blockedSites = result.blockedSites.map(normalizeDomain).filter(Boolean);
         } else {
             blockedSites = [...DEFAULT_SITES];
         }
+        if (typeof callback === "function") callback();
     });
+}
+
+function notifyTabsToRecheckSites(domains) {
+    if (!Array.isArray(domains) || domains.length === 0) return;
+
+    chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((tab) => {
+            if (!tab.url) return;
+            const key = getSiteKey(tab.url);
+            if (key && domains.includes(key)) {
+                chrome.tabs.sendMessage(tab.id, { action: "refreshBlockedSites" }, () => {
+                    // ignore errors (tab may not have content script)
+                });
+            }
+        });
+    });
+}
+
+function notifyComponentsBlockedSitesChanged(added, removed) {
+    chrome.runtime.sendMessage({ action: "blockedSitesChanged", added, removed });
 }
 
 // Keep the in-memory list in sync with storage
@@ -32,16 +53,22 @@ chrome.storage.onChanged.addListener((changes, area) => {
         const oldSites = Array.isArray(changes.blockedSites.oldValue) ? changes.blockedSites.oldValue.map(normalizeDomain) : [];
         const newSites = Array.isArray(changes.blockedSites.newValue) ? changes.blockedSites.newValue.map(normalizeDomain) : [];
 
+        const addedSites = newSites.filter((site) => !oldSites.includes(site));
+        const removedSites = oldSites.filter((site) => !newSites.includes(site));
+
         // Clear any timers/alarms for sites that were removed from the block list.
-        oldSites.forEach((site) => {
-            if (!newSites.includes(site)) {
-                const alarmName = `${ALARM_NAME_BASE}_${site}`;
-                chrome.alarms.clear(alarmName);
-                clearTimerState(site);
-            }
+        removedSites.forEach((site) => {
+            const alarmName = `${ALARM_NAME_BASE}_${site}`;
+            chrome.alarms.clear(alarmName);
+            clearTimerState(site);
         });
 
-        updateBlockedSitesFromStorage();
+        updateBlockedSitesFromStorage(() => {
+            // Notify content scripts to re-check their current tab URLs
+            notifyTabsToRecheckSites(addedSites);
+            // Notify popups / other components about blocked list changes
+            notifyComponentsBlockedSitesChanged(addedSites, removedSites);
+        });
     }
 });
 

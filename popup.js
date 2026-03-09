@@ -84,6 +84,26 @@ function setSite(text) {
     siteEl.textContent = text;
 }
 
+function handleBlockedSitesChange(added = [], removed = []) {
+    withActiveTab((key) => {
+        if (!key) return;
+
+        // If the current site was removed, stop the timer UI.
+        if (removed.includes(key)) {
+            clearInterval(countdownInterval);
+            timerEl.textContent = "Stopped";
+            setMode("reset");
+            setStatus("Site removed from blocked list");
+            return;
+        }
+
+        // If the current site was added, re-query timer state.
+        if (added.includes(key)) {
+            queryEndTime();
+        }
+    });
+}
+
 function setProgress(percent) {
     progressBar.style.width = `${percent}%`;
 }
@@ -330,6 +350,14 @@ blockedSiteInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
         event.preventDefault();
         addBlockedSiteBtn.click();
+    }
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message || !message.action) return;
+
+    if (message.action === "blockedSitesChanged") {
+        handleBlockedSitesChange(message.added || [], message.removed || []);
     }
 });
 
